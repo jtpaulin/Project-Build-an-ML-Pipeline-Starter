@@ -1,103 +1,76 @@
 #!/usr/bin/env python
 """
-Download from W&B the raw dataset and apply some basic data cleaning, exporting the result to a new artifact
+Download from W&B the raw dataset, clean it, filter outliers by price and geolocation,
+convert last_review to datetime, and upload as a new artifact.
 """
 import argparse
 import logging
 import wandb
 import pandas as pd
 
-
 logging.basicConfig(level=logging.INFO, format="%(asctime)-15s %(message)s")
 logger = logging.getLogger()
 
-# DO NOT MODIFY
 def go(args):
-
-    run = wandb.init(job_type="basic_cleaning")
+    """Main function to download, clean, and upload dataset to W&B."""
+    
+    run = wandb.init(
+        project="nyc_airbnb",
+        group="cleaning",
+        job_type="basic_cleaning",
+        save_code=True
+    )
     run.config.update(args)
 
-    # Download input artifact. This will also log that this script is using this
-    
-    run = wandb.init(project="nyc_airbnb", group="cleaning", save_code=True)
+    # Download input artifact
     artifact_local_path = run.use_artifact(args.input_artifact).file()
     df = pd.read_csv(artifact_local_path)
-    # Drop outliers
-    min_price = args.min_price
-    max_price = args.max_price
-    idx = df['price'].between(min_price, max_price)
-    df = df[idx].copy()
+
+    # Filter price outliers
+    idx_price = df['price'].between(args.min_price, args.max_price)
+    df = df[idx_price].copy()
+
+    # Filter longitude/latitude for NYC (Step 6)
+    idx_geo = df['longitude'].between(-74.25, -73.50) & df['latitude'].between(40.5, 41.2)
+    df = df[idx_geo].copy()
+
     # Convert last_review to datetime
     df['last_review'] = pd.to_datetime(df['last_review'])
 
-    # Step 6: TODO
-    # Only implement this step when reaching Step 6: Pipeline Release and Updates
-    # in the project.
-    # Add longitude and latitude filter to allow test_proper_boundaries to pass
-    # ENTER CODE HERE
+    # TODO: drop rows outside NYC boundaries
+    idx = df['longitude'].between(-74.25, -73.50) & df['latitude'].between(40.5, 41.2)
+    df = df[idx].copy()
 
-    # Save the cleaned data
-    df.to_csv('clean_sample.csv',index=False)
+    
+    # Save cleaned data
+    cleaned_file = "clean_sample.csv"
+    df.to_csv(cleaned_file, index=False)
 
-    # log the new data.
+    # Log cleaned artifact to W&B
     artifact = wandb.Artifact(
-     args.output_artifact,
-     type=args.output_type,
-     description=args.output_description,
- )
-    artifact.add_file("clean_sample.csv")
+        args.output_artifact,
+        type=args.output_type,
+        description=args.output_description
+    )
+    artifact.add_file(cleaned_file)
     run.log_artifact(artifact)
 
 
-# TODO: In the code below, fill in the data type for each argument. The data type should be str, float or int. 
-# TODO: In the code below, fill in a description for each argument. The description should be a string.
 if __name__ == "__main__":
-
-    parser = argparse.ArgumentParser(description="A very basic data cleaning")
+    parser = argparse.ArgumentParser(description="Basic cleaning for NYC Airbnb dataset")
   
-    parser.add_argument(
-        "--input_artifact", 
-        type = ## INSERT TYPE HERE: str, float or int,
-        help = ## INSERT DESCRIPTION HERE,
-        required = True
-    )
-
-    parser.add_argument(
-        "--output_artifact", 
-        type = ## INSERT TYPE HERE: str, float or int,
-        help = ## INSERT DESCRIPTION HERE,
-        required = True
-    )
-
-    parser.add_argument(
-        "--output_type", 
-        type = ## INSERT TYPE HERE: str, float or int,
-        help = ## INSERT DESCRIPTION HERE,
-        required = True
-    )
-
-    parser.add_argument(
-        "--output_description", 
-        type = ## INSERT TYPE HERE: str, float or int,
-        help = ## INSERT DESCRIPTION HERE,
-        required = True
-    )
-
-    parser.add_argument(
-        "--min_price", 
-        type = ## INSERT TYPE HERE: str, float or int,
-        help = ## INSERT DESCRIPTION HERE,
-        required = True
-    )
-
-    parser.add_argument(
-        "--max_price",
-        type = ## INSERT TYPE HERE: str, float or int,
-        help = ## INSERT DESCRIPTION HERE,
-        required = True
-    )
-
+    parser.add_argument("--input_artifact", type=str, required=True,
+                        help="W&B artifact name for the initial dataset to clean")
+    parser.add_argument("--output_artifact", type=str, required=True,
+                        help="Name for the cleaned dataset artifact to upload to W&B")
+    parser.add_argument("--output_type", type=str, required=True,
+                        help="Type of the output artifact (e.g., 'clean_sample')")
+    parser.add_argument("--output_description", type=str, required=True,
+                        help="Description of the cleaned dataset artifact")
+    parser.add_argument("--min_price", type=float, required=True,
+                        help="Minimum price of listings to include")
+    parser.add_argument("--max_price", type=float, required=True,
+                        help="Maximum price of listings to include")
 
     args = parser.parse_args()
-
     go(args)
